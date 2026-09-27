@@ -1,4 +1,4 @@
-name: Do not block registration if backup fails
+name: Show total teams on roster
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Make registration backup non-blocking
+      - name: Add team total above men total
         shell: bash
         run: |
           set -euo pipefail
@@ -24,15 +24,15 @@ jobs:
           from pathlib import Path
           p=Path('index.html')
           s=p.read_text()
-          old='let {error:backupError}=await db.from("team_registration_backup").insert({session_id:S.sid,team_name,team_size,members});if(backupError)throw new Error("Your registration could not be safely saved. Please try again. "+backupError.message);'
-          new='let {error:backupError}=await db.from("team_registration_backup").insert({session_id:S.sid,team_name,team_size,members});if(backupError)console.error("Registration backup failed:",backupError);'
+          old='const totalMen=data.reduce((sum,r)=>sum+(Number(r.team_size)||0),0);\n    box.innerHTML=\'<div class="rosterTotal"><b>TOTAL MEN ON ROSTERS: \'+totalMen+\'</b></div>'
+          new='const totalTeams=data.length;\n    const totalMen=data.reduce((sum,r)=>sum+(Number(r.team_size)||0),0);\n    box.innerHTML=\'<div class="rosterTotal"><b>TOTAL TEAMS ON ROSTER: \'+totalTeams+\'</b><br><b>TOTAL MEN ON ROSTERS: \'+totalMen+\'</b></div>'
           if old not in s:
-              raise SystemExit('Blocking backup logic not found; refusing unsafe edit')
+              raise SystemExit('Roster total block not found; refusing unsafe edit')
           s=s.replace(old,new,1)
           p.write_text(s)
           PY
           if ! git diff --quiet -- index.html; then
             git add index.html
-            git commit -m "Make registration backup non-blocking"
+            git commit -m "Show total teams on roster"
             git push origin HEAD:main
           fi
