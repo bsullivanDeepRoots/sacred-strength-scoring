@@ -1,4 +1,4 @@
-name: Back up team registration submissions
+name: Do not block registration if backup fails
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Save registration data before normal processing
+      - name: Make registration backup non-blocking
         shell: bash
         run: |
           set -euo pipefail
@@ -24,15 +24,15 @@ jobs:
           from pathlib import Path
           p=Path('index.html')
           s=p.read_text()
-          marker='$("#submitRoster").disabled=true;try{'
-          replacement='$("#submitRoster").disabled=true;try{let {error:backupError}=await db.from("team_registration_backup").insert({session_id:S.sid,team_name,team_size,members});if(backupError)throw new Error("Your registration could not be safely saved. Please try again. "+backupError.message);'
-          if marker not in s:
-              raise SystemExit('Roster submission start not found; refusing unsafe edit')
-          s=s.replace(marker,replacement,1)
+          old='let {error:backupError}=await db.from("team_registration_backup").insert({session_id:S.sid,team_name,team_size,members});if(backupError)throw new Error("Your registration could not be safely saved. Please try again. "+backupError.message);'
+          new='let {error:backupError}=await db.from("team_registration_backup").insert({session_id:S.sid,team_name,team_size,members});if(backupError)console.error("Registration backup failed:",backupError);'
+          if old not in s:
+              raise SystemExit('Blocking backup logic not found; refusing unsafe edit')
+          s=s.replace(old,new,1)
           p.write_text(s)
           PY
           if ! git diff --quiet -- index.html; then
             git add index.html
-            git commit -m "Back up registration before team roster processing"
+            git commit -m "Make registration backup non-blocking"
             git push origin HEAD:main
           fi
