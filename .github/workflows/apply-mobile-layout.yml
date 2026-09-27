@@ -1,4 +1,4 @@
-name: Show friendly duplicate team message
+name: Allow missing rosters to attach to existing teams
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Update duplicate registration messages
+      - name: Recover rosterless existing teams safely
         shell: bash
         run: |
           set -euo pipefail
@@ -24,12 +24,19 @@ jobs:
           from pathlib import Path
           p=Path('index.html')
           s=p.read_text()
-          s=s.replace('That TEAM name already exists, but it could not be loaded. Contact the administrator.','TEAM Name Already Registered — This TEAM name has already been registered. If this is your TEAM, you do not need to register again. If you need to update your TEAM roster, please contact Brennen Sullivan.')
-          s=s.replace('That TEAM already has a roster. Contact the administrator if you need to change it.','TEAM Name Already Registered — This TEAM name has already been registered. If this is your TEAM, you do not need to register again. If you need to update your TEAM roster, please contact Brennen Sullivan.')
+          start=s.find('$("#submitRoster").onclick=async()=>{')
+          end=s.find('\nasync function rosterData()',start)
+          if start < 0 or end < 0:
+              raise SystemExit('Roster handler not found; refusing unsafe edit')
+          old=s[start:end]
+          new=old.replace('let {data:existing,error:findError}=await db.from("teams").select("id,name").eq("session_id",S.sid).eq("name",team_name).maybeSingle();if(findError)throw findError;if(!existing)throw new Error("TEAM Name Already Registered — This TEAM name has already been registered. If this is your TEAM, you do not need to register again. If you need to update your TEAM roster, please contact Brennen Sullivan.");team=existing','await teams();let existing=S.teams.find(t=>t.name.trim().replace(/\\s+/g," ").toLowerCase()===team_name.trim().replace(/\\s+/g," ").toLowerCase());if(!existing)throw new Error("TEAM Name Already Registered — This TEAM name has already been registered. If this is your TEAM, you do not need to register again. If you need to update your TEAM roster, please contact Brennen Sullivan.");team=existing')
+          if new == old:
+              raise SystemExit('Expected duplicate-team lookup not found; refusing unsafe edit')
+          s=s[:start]+new+s[end:]
           p.write_text(s)
           PY
           if ! git diff --quiet -- index.html; then
             git add index.html
-            git commit -m "Show friendly duplicate team registration message"
+            git commit -m "Allow roster submission for existing rosterless teams"
             git push origin HEAD:main
           fi
