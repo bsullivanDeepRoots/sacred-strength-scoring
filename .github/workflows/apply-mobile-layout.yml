@@ -1,4 +1,4 @@
-name: Fix team roster registration reliability
+name: Number teams in Admin Manage Teams
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Make roster registration recover existing rosterless teams
+      - name: Add sequential numbers beside Manage Teams names
         shell: bash
         run: |
           set -euo pipefail
@@ -24,16 +24,15 @@ jobs:
           from pathlib import Path
           p=Path('index.html')
           s=p.read_text()
-          start=s.find('$("#submitRoster").onclick=async()=>{')
-          end=s.find('\nasync function rosterData()',start)
-          if start<0 or end<0:
-              raise SystemExit('Roster submission handler not found; refusing unsafe edit')
-          new=r'''$("#submitRoster").onclick=async()=>{let team_name=$("#newTeamName").value.trim(),team_size=+$("#rosterSize").value,names=$$(".memberName"),emails=$$(".memberEmailInput"),members=names.map((x,i)=>({name:x.value.trim(),email:emails[i].value.trim()}));$("#rosterSuccess").classList.remove("show");$("#rosterStatus").textContent="";if(!team_name)return $("#rosterStatus").textContent="Enter your TEAM name.";if(members.some(x=>!x.name||!x.email))return $("#rosterStatus").textContent="Enter a name and email for every TEAM member.";$("#submitRoster").disabled=true;try{let team=null,created=false;let {data:newTeam,error:teamError}=await db.from("teams").insert({session_id:S.sid,name:team_name}).select().single();if(!teamError){team=newTeam;created=true}else if(teamError.code==="23505"){let {data:existing,error:findError}=await db.from("teams").select("id,name").eq("session_id",S.sid).eq("name",team_name).maybeSingle();if(findError)throw findError;if(!existing)throw new Error("That TEAM name already exists, but it could not be loaded. Contact the administrator.");team=existing}else throw teamError;let {error:rosterError}=await db.from("team_rosters").insert({team_id:team.id,team_size,members});if(rosterError){if(created)await db.from("teams").delete().eq("id",team.id);if(rosterError.code==="23505")throw new Error("That TEAM already has a roster. Contact the administrator if you need to change it.");throw rosterError}$("#rosterSuccess").textContent="✓ TEAM name and roster submitted successfully.";$("#rosterSuccess").classList.add("show");$("#newTeamName").value="";$("#rosterSize").value="1";buildMemberFields();await teams();await render();if(await isAdmin())await renderAdmin()}catch(e){$("#rosterStatus").textContent="Could not submit TEAM roster: "+e.message}finally{$("#submitRoster").disabled=false}};'''
-          s=s[:start]+new+s[end:]
+          old='let th=S.teams.map(t=>\'<div class="row"><input id="tn\'+t.id+\'" value="\'+esc(t.name)+\'"><button data-rename="\'+t.id+\'">Save</button><button class="danger" data-delteam="\'+t.id+\'">Delete</button></div>\').join("");'
+          new='let th=S.teams.map((t,i)=>\'<div class="row"><strong style="min-width:28px;text-align:right">\'+(i+1)+\'.</strong><input id="tn\'+t.id+\'" value="\'+esc(t.name)+\'"><button data-rename="\'+t.id+\'">Save</button><button class="danger" data-delteam="\'+t.id+\'">Delete</button></div>\').join("");'
+          if old not in s:
+              raise SystemExit('Manage Teams renderer not found; refusing unsafe edit')
+          s=s.replace(old,new,1)
           p.write_text(s)
           PY
           if ! git diff --quiet -- index.html; then
             git add index.html
-            git commit -m "Make team roster registration reliable and recover rosterless teams"
+            git commit -m "Number teams in Admin Manage Teams"
             git push origin HEAD:main
           fi
