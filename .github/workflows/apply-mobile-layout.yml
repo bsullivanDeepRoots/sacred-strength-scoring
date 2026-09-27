@@ -1,4 +1,4 @@
-name: Number teams in Admin Manage Teams
+name: Show friendly duplicate team message
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Add sequential numbers beside Manage Teams names
+      - name: Update duplicate registration messages
         shell: bash
         run: |
           set -euo pipefail
@@ -24,15 +24,12 @@ jobs:
           from pathlib import Path
           p=Path('index.html')
           s=p.read_text()
-          old='let th=S.teams.map(t=>\'<div class="row"><input id="tn\'+t.id+\'" value="\'+esc(t.name)+\'"><button data-rename="\'+t.id+\'">Save</button><button class="danger" data-delteam="\'+t.id+\'">Delete</button></div>\').join("");'
-          new='let th=S.teams.map((t,i)=>\'<div class="row"><strong style="min-width:28px;text-align:right">\'+(i+1)+\'.</strong><input id="tn\'+t.id+\'" value="\'+esc(t.name)+\'"><button data-rename="\'+t.id+\'">Save</button><button class="danger" data-delteam="\'+t.id+\'">Delete</button></div>\').join("");'
-          if old not in s:
-              raise SystemExit('Manage Teams renderer not found; refusing unsafe edit')
-          s=s.replace(old,new,1)
+          s=s.replace('That TEAM name already exists, but it could not be loaded. Contact the administrator.','TEAM Name Already Registered — This TEAM name has already been registered. If this is your TEAM, you do not need to register again. If you need to update your TEAM roster, please contact Brennen Sullivan.')
+          s=s.replace('That TEAM already has a roster. Contact the administrator if you need to change it.','TEAM Name Already Registered — This TEAM name has already been registered. If this is your TEAM, you do not need to register again. If you need to update your TEAM roster, please contact Brennen Sullivan.')
           p.write_text(s)
           PY
           if ! git diff --quiet -- index.html; then
             git add index.html
-            git commit -m "Number teams in Admin Manage Teams"
+            git commit -m "Show friendly duplicate team registration message"
             git push origin HEAD:main
           fi
