@@ -106,6 +106,7 @@ select,input{border-radius:4px;border-width:2px}.scores input{background:#fbfaf5
   .scoreTableWrap{overflow-x:auto;overflow-y:visible}
 }
 </style>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head><body>
   <div id="accessGate" style="display:none;min-height:100vh;align-items:center;justify-content:center;padding:24px;background:#f5f3ed;">
   <div style="width:100%;max-width:480px;background:#fff;border:1px solid #d8d3c7;border-radius:14px;padding:30px;box-shadow:0 8px 28px rgba(0,0,0,.08);">
@@ -199,18 +200,18 @@ select,input{border-radius:4px;border-width:2px}.scores input{background:#fbfaf5
       <div style="margin-top:24px;margin-bottom:24px;">
   <h3>Import Registration List</h3>
   <p class="small">
-    Upload a CSV registration export. Existing authorized emails will be preserved and duplicates will be ignored.
+    Upload a CSV or Excel (.xlsx) registration export. Existing authorized emails will be preserved and duplicates will be ignored.
   </p>
 
   <input
     id="authorizedEmailImport"
     type="file"
-    accept=".csv,text/csv"
+    accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
   >
 
   <div class="row" style="gap:10px;margin-top:10px;">
     <button id="importAuthorizedEmails" class="primary">
-      Import Registration CSV
+      Import Registration List
     </button>
 
     <button id="downloadAuthorizedEmails" type="button">
@@ -617,70 +618,103 @@ $("#logoutBtn").onclick=async()=>{await db.auth.signOut();await authView()};
     status.textContent=e.message;
   }
 }
-  async function importAuthorizedEmails(){
+ async function importAuthorizedEmails(){
   const input=$("#authorizedEmailImport");
   const status=$("#authorizedImportStatus");
   const file=input.files?.[0];
 
   if(!file){
-    status.textContent="Choose a registration CSV file first.";
+    status.textContent="Choose a registration CSV or Excel file first.";
     return;
   }
 
   status.textContent="Reading registration file...";
 
   try{
-    const text=await file.text();
+    let records=[];
 
-    const rows=text
-      .split(/\r?\n/)
-      .filter(row=>row.trim());
-
-    if(rows.length<2){
-      throw new Error("The CSV file does not contain registration records.");
-    }
-
-    function parseCsvRow(row){
-      const values=[];
-      let value="";
-      let quoted=false;
-
-      for(let i=0;i<row.length;i++){
-        const char=row[i];
-
-        if(char==='"'){
-          if(quoted && row[i+1]==='"'){
-            value+='"';
-            i++;
-          }else{
-            quoted=!quoted;
-          }
-        }else if(char==="," && !quoted){
-          values.push(value.trim());
-          value="";
-        }else{
-          value+=char;
-        }
+    if(file.name.toLowerCase().endsWith(".xlsx")){
+      if(typeof XLSX==="undefined"){
+        throw new Error("Excel reader could not be loaded. Refresh the page and try again.");
       }
 
-      values.push(value.trim());
-      return values;
+      const buffer=await file.arrayBuffer();
+      const workbook=XLSX.read(buffer,{type:"array"});
+      const firstSheet=workbook.Sheets[workbook.SheetNames[0]];
+
+      records=XLSX.utils.sheet_to_json(firstSheet,{
+        defval:"",
+        raw:false
+      });
+
+    }else{
+      const text=await file.text();
+
+      function parseCsvRow(row){
+        const values=[];
+        let value="";
+        let quoted=false;
+
+        for(let i=0;i<row.length;i++){
+          const char=row[i];
+
+          if(char==='"'){
+            if(quoted && row[i+1]==='"'){
+              value+='"';
+              i++;
+            }else{
+              quoted=!quoted;
+            }
+          }else if(char==="," && !quoted){
+            values.push(value.trim());
+            value="";
+          }else{
+            value+=char;
+          }
+        }
+
+        values.push(value.trim());
+        return values;
+      }
+
+      const rows=text
+        .split(/\r?\n/)
+        .filter(row=>row.trim());
+
+      if(rows.length<2){
+        throw new Error("The CSV file does not contain registration records.");
+      }
+
+      const headers=parseCsvRow(rows[0]);
+
+      records=rows.slice(1).map(row=>{
+        const values=parseCsvRow(row);
+        const record={};
+
+        headers.forEach((header,index)=>{
+          record[header]=values[index] || "";
+        });
+
+        return record;
+      });
     }
 
-    const headers=parseCsvRow(rows[0])
-      .map(header=>header.toLowerCase().trim());
+    if(!records.length){
+      throw new Error("The registration file does not contain registration records.");
+    }
 
-    const emailIndex=headers.findIndex(header=>
-      header.includes("email")
+    const headers=Object.keys(records[0]);
+
+    const emailHeader=headers.find(header=>
+      String(header).toLowerCase().includes("email")
     );
 
-    if(emailIndex===-1){
-      throw new Error("No email column was found in this CSV file.");
+    if(!emailHeader){
+      throw new Error("No email column was found in this registration file.");
     }
 
-    const emails=rows
-      .slice(1)
-      .map(row=>parseCsvRow(row)[emailIndex] || "")
+    const emails=records
+      .map(record=>String(record[emailHeader] || ""))
       .map(email=>email.trim().toLowerCase())
       .filter(email=>email && email.includes("@"));
 
