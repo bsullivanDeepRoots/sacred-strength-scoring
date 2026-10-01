@@ -196,6 +196,30 @@ select,input{border-radius:4px;border-width:2px}.scores input{background:#fbfaf5
     </div>
 
     <div style="margin-top:24px;">
+      <div style="margin-top:24px;margin-bottom:24px;">
+  <h3>Import Registration List</h3>
+  <p class="small">
+    Upload a CSV registration export. Existing authorized emails will be preserved and duplicates will be ignored.
+  </p>
+
+  <input
+    id="authorizedEmailImport"
+    type="file"
+    accept=".csv,text/csv"
+  >
+
+  <div class="row" style="gap:10px;margin-top:10px;">
+    <button id="importAuthorizedEmails" class="primary">
+      Import Registration CSV
+    </button>
+
+    <button id="downloadAuthorizedEmails" type="button">
+      Download Authorized List
+    </button>
+  </div>
+
+  <div id="authorizedImportStatus" class="status"></div>
+</div>
       <div class="row" style="justify-content:space-between;align-items:center;">
         <h3 style="margin:0;">Authorized Participants</h3>
         <span id="authorizedEmailCount" class="small"></span>
@@ -538,6 +562,8 @@ async function loadAuthorizedEmails(){
 $("#loginBtn").onclick=async()=>{let {error}=await db.auth.signInWithPassword({email:$("#adminEmail").value.trim(),password:$("#adminPassword").value});if(error)return $("#loginStatus").textContent=error.message;$("#adminPassword").value="";$("#loginStatus").textContent="";await authView()};
 $("#logoutBtn").onclick=async()=>{await db.auth.signOut();await authView()};
   $("#addAuthorizedEmail").onclick=addAuthorizedEmail;
+  $("#downloadAuthorizedEmails").onclick=downloadAuthorizedEmails;
+  $("#importAuthorizedEmails").onclick=importAuthorizedEmails;
   $("#authorizedEmailList").onclick=async(e)=>{
   const btn=e.target.closest("[data-remove-authorized]");
   if(!btn)return;
@@ -561,6 +587,126 @@ $("#logoutBtn").onclick=async()=>{await db.auth.signOut();await authView()};
     status.textContent=err.message;
   }
 };
+  async function downloadAuthorizedEmails(){
+  const status=$("#authorizedImportStatus");
+
+  try{
+    status.textContent="Preparing download...";
+
+    const data=await adminAccessRequest({action:"list"});
+    const emails=data.emails || [];
+
+    const csv=[
+      "email",
+      ...emails.map(row=>`"${String(row.email).replace(/"/g,'""')}"`)
+    ].join("\n");
+
+    const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+
+    a.href=url;
+    a.download="deep-roots-authorized-emails.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    status.textContent=`Downloaded ${emails.length} authorized emails.`;
+  }catch(e){
+    status.textContent=e.message;
+  }
+}
+  async function importAuthorizedEmails(){
+  const input=$("#authorizedEmailImport");
+  const status=$("#authorizedImportStatus");
+  const file=input.files?.[0];
+
+  if(!file){
+    status.textContent="Choose a registration CSV file first.";
+    return;
+  }
+
+  status.textContent="Reading registration file...";
+
+  try{
+    const text=await file.text();
+
+    const rows=text
+      .split(/\r?\n/)
+      .filter(row=>row.trim());
+
+    if(rows.length<2){
+      throw new Error("The CSV file does not contain registration records.");
+    }
+
+    function parseCsvRow(row){
+      const values=[];
+      let value="";
+      let quoted=false;
+
+      for(let i=0;i<row.length;i++){
+        const char=row[i];
+
+        if(char==='"'){
+          if(quoted && row[i+1]==='"'){
+            value+='"';
+            i++;
+          }else{
+            quoted=!quoted;
+          }
+        }else if(char==="," && !quoted){
+          values.push(value.trim());
+          value="";
+        }else{
+          value+=char;
+        }
+      }
+
+      values.push(value.trim());
+      return values;
+    }
+
+    const headers=parseCsvRow(rows[0])
+      .map(header=>header.toLowerCase().trim());
+
+    const emailIndex=headers.findIndex(header=>
+      header.includes("email")
+    );
+
+    if(emailIndex===-1){
+      throw new Error("No email column was found in this CSV file.");
+    }
+
+    const emails=rows
+      .slice(1)
+      .map(row=>parseCsvRow(row)[emailIndex] || "")
+      .map(email=>email.trim().toLowerCase())
+      .filter(email=>email && email.includes("@"));
+
+    const uniqueEmails=[...new Set(emails)];
+
+    if(!uniqueEmails.length){
+      throw new Error("No valid email addresses were found.");
+    }
+
+    status.textContent=`Importing ${uniqueEmails.length} email addresses...`;
+
+    const data=await adminAccessRequest({
+      action:"import",
+      emails:uniqueEmails
+    });
+
+    status.textContent=
+      `Import complete. ${data.processed} registration email addresses processed.`;
+
+    input.value="";
+    await loadAuthorizedEmails();
+
+  }catch(e){
+    status.textContent=e.message;
+  }
+}
 async function loadTimeManagementVideo(){const a=$("#timeManagementVideo");if(!a)return;const {data,error}=await db.from("site_settings").select("value").eq("key","time_management_video_url").maybeSingle();if(error){console.error(error);return}const url=(data?.value||"").trim();if(url){a.href=url;a.style.display="inline-block"}else{a.removeAttribute("href");a.style.display="none"}}
 async function loadTimeManagementVideoAdmin(){const input=$("#timeManagementVideoUrl");if(!input)return;const {data,error}=await db.from("site_settings").select("value").eq("key","time_management_video_url").maybeSingle();if(error)return $("#timeManagementVideoStatus").textContent=error.message;input.value=data?.value||""}
 async function saveTimeManagementVideo(){const input=$("#timeManagementVideoUrl"),status=$("#timeManagementVideoStatus"),url=input.value.trim();if(!url)return status.textContent="Paste a YouTube link first.";try{const u=new URL(url);if(!["youtube.com","www.youtube.com","youtu.be","m.youtube.com"].includes(u.hostname))return status.textContent="Please enter a valid YouTube link."}catch(e){return status.textContent="Please enter a valid YouTube link."}status.textContent="Saving...";const {error}=await db.from("site_settings").upsert({key:"time_management_video_url",value:url},{onConflict:"key"});if(error)return status.textContent=error.message;status.textContent="Time Management video link saved.";await loadTimeManagementVideo()}
