@@ -456,11 +456,16 @@ $("#submit").onclick=async()=>{
     S.w=w;
     await render();
 
-  }catch(e){
+ }catch(e){
+  console.error("Post-submit refresh error:",e);
+  if(!$(".successBox").classList.contains("show")){
     $("#status").textContent="Could not submit TEAM score. Please try again.";
-  }finally{
-    $("#submit").disabled=false;
+  }else{
+    $("#status").textContent="";
   }
+}finally{
+  $("#submit").disabled=false;
+}
 };
 function buildMemberFields(){let n=+$("#rosterSize").value||1;$("#memberFields").innerHTML=Array.from({length:n},(_,i)=>'<div class="memberBlock"><label>TEAM Member '+(i+1)+(i===0?' (TEAM Captain)':'')+'</label><input class="memberName" placeholder="Full name"><label>Email</label><input class="memberEmailInput" type="email" placeholder="Email address"></div>').join("")}
 $("#rosterSize").onchange=buildMemberFields;buildMemberFields();
