@@ -448,11 +448,13 @@ $("#submit").onclick=async()=>{
     $("#successBox").textContent="✓ Score submitted successfully: "+sc+" / 120";
     $("#successBox").classList.add("show");
 
-    $(".s").forEach(x=>x.value="");
+    document.querySelectorAll(".s").forEach(x=>x.value="");
     $("#captainName").value="";
     $("#captainEmail").value="";
 
-    S.w=w;
+    preview();
+S.w=W;
+await render();
 
  }catch(e){
   console.error("Post-submit refresh error:",e);
